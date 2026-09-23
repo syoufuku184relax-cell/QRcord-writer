@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ロゴ・タイトル付きQRコード作成アプリ</title>
-  <!-- 【修正箇所1】ライブラリの読み込みをdeferにし、確実に初期化前に準備されるように変更 -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+  <!-- 外部依存を排除し、同期処理可能な軽量QR生成ライブラリを採用 -->
+  <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
   <style>
     * {
       box-sizing: border-box;
@@ -114,10 +114,6 @@
     .download-btn:hover {
       background-color: #2b6cb0;
     }
-    /* 非表示のQRコード保持要素 */
-    #qrcode-hidden {
-      display: none;
-    }
   </style>
 </head>
 <body>
@@ -165,9 +161,6 @@
   </div>
 </div>
 
-<!-- 一時処理用の非表示領域 -->
-<div id="qrcode-hidden"></div>
-
 <script>
   // DOM要素の取得
   const qrTextInput = document.getElementById('qr-text');
@@ -178,7 +171,6 @@
   const logoSizeVal = document.getElementById('logo-size-val');
   const downloadBtn = document.getElementById('download-btn');
   const mainCanvas = document.getElementById('main-canvas');
-  const hiddenQrDiv = document.getElementById('qrcode-hidden');
 
   let uploadedImage = null;
 
@@ -192,58 +184,26 @@
   mainCanvas.width = canvasWidth;
   mainCanvas.height = canvasHeight;
 
-  // 描画更新処理
-  function updateQRCode() {
-    const text = qrTextInput.value.trim();
-    if (!text) return;
-
-    // QRCodeライブラリが読み込まれていない場合はスキップ
-    if (typeof QRCode === 'undefined') return;
-
-    // 一時領域のクリア
-    hiddenQrDiv.innerHTML = '';
-
-    // QRCode.js でQRコード生成 (誤り訂正レベル H: 最高)
-    new QRCode(hiddenQrDiv, {
-      text: text,
-      width: qrSize,
-      height: qrSize,
-      colorDark: "#000000",
-      colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.H
-    });
-
-    // 【修正箇所2】生成された画像・Canvas要素の取得判定と確実に描画を呼ぶ非同期ロジックを追加
-    const checkAndRender = () => {
-      const qrElement = hiddenQrDiv.querySelector('img') || hiddenQrDiv.querySelector('canvas');
-      if (qrElement) {
-        if (qrElement.tagName.toLowerCase() === 'img') {
-          if (qrElement.complete && qrElement.naturalWidth !== 0) {
-            renderCanvas(qrElement);
-          } else {
-            qrElement.onload = () => renderCanvas(qrElement);
-          }
-        } else {
-          renderCanvas(qrElement);
-        }
-      } else {
-        setTimeout(checkAndRender, 30);
-      }
-    };
-
-    checkAndRender();
-  }
-
-  // キャンバス描画メイン処理
-  function renderCanvas(qrImg) {
+  // メイン同期描画処理
+  function renderAll() {
+    const text = qrTextInput.value.trim() || " ";
     const ctx = mainCanvas.getContext('2d');
 
     // 1. 背景描画 (白)
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-    // 2. QRコード描画
-    ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+    // 2. QRコード同期生成
+    let qrCanvas = document.createElement('canvas');
+    if (typeof QRious !== 'undefined') {
+      new QRious({
+        element: qrCanvas,
+        value: text,
+        size: qrSize,
+        level: 'H' // 誤り訂正レベル最高
+      });
+      ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
+    }
 
     // 3. 左上タイトルの描画（欄外）
     const titleTopLeft = titleTopLeftInput.value;
@@ -273,7 +233,7 @@
       const logoX = qrX + (qrSize - logoWidth) / 2;
       const logoY = qrY + (qrSize - logoHeight) / 2;
 
-      // ロゴ背面用に白枠（背景）を描画してQRコードの誤認識を防ぐ
+      // ロゴ背面に白枠を描画
       const padding = 6;
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(
@@ -288,14 +248,14 @@
     }
   }
 
-  // イベントリスナー設定（リアルタイム反映）
-  qrTextInput.addEventListener('input', updateQRCode);
-  titleTopLeftInput.addEventListener('input', updateQRCode);
-  titleBottomRightInput.addEventListener('input', updateQRCode);
+  // イベントリスナー（即時同期描画）
+  qrTextInput.addEventListener('input', renderAll);
+  titleTopLeftInput.addEventListener('input', renderAll);
+  titleBottomRightInput.addEventListener('input', renderAll);
 
   logoSizeInput.addEventListener('input', (e) => {
     logoSizeVal.textContent = `${e.target.value}%`;
-    updateQRCode();
+    renderAll();
   });
 
   logoFileInput.addEventListener('change', (e) => {
@@ -306,14 +266,14 @@
         const img = new Image();
         img.onload = () => {
           uploadedImage = img;
-          updateQRCode();
+          renderAll();
         };
         img.src = event.target.result;
       };
       reader.readAsDataURL(file);
     } else {
       uploadedImage = null;
-      updateQRCode();
+      renderAll();
     }
   });
 
@@ -325,10 +285,8 @@
     link.click();
   });
 
-  // 【修正箇所3】DOMContentLoadedイベントにより、ライブラリ読み込み完了後に確実に初回描画を実行
-  document.addEventListener('DOMContentLoaded', () => {
-    updateQRCode();
-  });
+  // 初期化実行
+  window.addEventListener('load', renderAll);
 </script>
 
 </body>
