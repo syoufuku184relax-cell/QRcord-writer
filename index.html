@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ロゴ・タイトル付きQRコード作成アプリ</title>
-  <!-- QRCode.js ライブラリ (CDN) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- 【修正箇所1】ライブラリの読み込みをdeferにし、確実に初期化前に準備されるように変更 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
   <style>
     * {
       box-sizing: border-box;
@@ -197,6 +197,9 @@
     const text = qrTextInput.value.trim();
     if (!text) return;
 
+    // QRCodeライブラリが読み込まれていない場合はスキップ
+    if (typeof QRCode === 'undefined') return;
+
     // 一時領域のクリア
     hiddenQrDiv.innerHTML = '';
 
@@ -210,17 +213,25 @@
       correctLevel: QRCode.CorrectLevel.H
     });
 
-    // 生成完了（DOMレンダリング）を待ってCanvasに合成
-    setTimeout(() => {
-      const qrImg = hiddenQrDiv.querySelector('img');
-      if (qrImg) {
-        if (qrImg.complete) {
-          renderCanvas(qrImg);
+    // 【修正箇所2】生成された画像・Canvas要素の取得判定と確実に描画を呼ぶ非同期ロジックを追加
+    const checkAndRender = () => {
+      const qrElement = hiddenQrDiv.querySelector('img') || hiddenQrDiv.querySelector('canvas');
+      if (qrElement) {
+        if (qrElement.tagName.toLowerCase() === 'img') {
+          if (qrElement.complete && qrElement.naturalWidth !== 0) {
+            renderCanvas(qrElement);
+          } else {
+            qrElement.onload = () => renderCanvas(qrElement);
+          }
         } else {
-          qrImg.onload = () => renderCanvas(qrImg);
+          renderCanvas(qrElement);
         }
+      } else {
+        setTimeout(checkAndRender, 30);
       }
-    }, 50);
+    };
+
+    checkAndRender();
   }
 
   // キャンバス描画メイン処理
@@ -314,10 +325,10 @@
     link.click();
   });
 
-  // 初期化実行
-  window.onload = () => {
+  // 【修正箇所3】DOMContentLoadedイベントにより、ライブラリ読み込み完了後に確実に初回描画を実行
+  document.addEventListener('DOMContentLoaded', () => {
     updateQRCode();
-  };
+  });
 </script>
 
 </body>
